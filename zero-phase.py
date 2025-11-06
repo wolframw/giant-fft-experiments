@@ -25,7 +25,6 @@ zero_signal_mono   *= util.zero_phase_gain_comp(len(zero_signal_mono), args.epsi
 
 if not args.no_fade:
     envelope = util.sine_envelope(len(zero_signal_mono), util.calc_transient_length(zero_signal_mono))
-    # envelope = util.sine_envelope(len(zero_signal_mono), int(44100*8))
     zero_signal_stereo1 *= envelope
     zero_signal_stereo2 *= envelope
     zero_signal_mono    *= envelope

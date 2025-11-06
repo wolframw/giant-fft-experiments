@@ -1,0 +1,1129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <script>
+    MathJax = {
+      tex: {
+        macros: {
+          sgn: "\\operatorname{sgn}",
+          sgnp: "\\operatorname{sgn}^{\\!+}",
+          median: "\\operatorname{median}",
+          mod: "\\operatorname{\\:mod\\:}",
+          sinc: "\\operatorname{sinc}",
+          dotdot: "\\mathinner{\\ldotp\\!\\ldotp}",
+          sq: "{\\small\\underline{\\phantom{L}}\\overline{\\phantom{L}}}",
+          l: ['\\mathopen{}\\left#1', 1],
+          r: ['\\right#1\\mathclose{}', 1]
+        },
+        tags: "ams"
+      }
+    };
+  </script>
+  <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@4.0.0/tex-mml-chtml.js"></script>
+  <script src="https://code.jquery.com/jquery-3.7.1.min.js" integrity="sha256-/JqT3SQfawRcv/BIHPThkBvs0OEvtFFmqPF/lYI/Cxo=" crossorigin="anonymous"></script>
+  <script src="pages_assets/trackswitch.min.js"></script>
+  <link href="https://maxcdn.bootstrapcdn.com/font-awesome/4.7.0/css/font-awesome.min.css" rel="stylesheet" integrity="sha384-wvfXpqpZZVQGK6TAh5PVlGOfQNHSoD2xbE+QkPxCAFlNEevoEH3Sl0sibVcOQVnN" crossorigin="anonymous">
+  <link href="pages_assets/trackswitch.min.css" rel="stylesheet">
+  <style>
+    html {
+      font-family: sans-serif;
+    }
+
+    mjx-container {
+      line-height: 0px;
+    }
+
+    main {
+      margin: 4em auto;
+    }
+
+    p,
+    li {
+      text-align: justify;
+      hyphens: auto;
+    }
+
+    body {
+      line-height: 1.35;
+    }
+
+    h1 {
+      text-align: center;
+      font-size: 1.5em;
+      margin-top: 12px;
+      margin-bottom: 24px;
+    }
+
+    h2 {
+      font-size: 1.25em;
+      margin-bottom: 12px;
+      margin-top: 24px;
+    }
+
+    h3 {
+      font-size: 1em;
+      font-weight: bold;
+      margin: 12px 0 0 0;
+    }
+
+    ol#bib {
+      counter-reset: bib-counter;
+      list-style-type: none;
+    }
+
+    ol#media {
+      counter-reset: media-counter;
+      list-style-type: none;
+    }
+
+    ol li {
+      margin-bottom: 6px;
+    }
+
+    ol#bib li:before {
+      content: '[' counter(bib-counter) '] ';
+      counter-increment: bib-counter;
+    }
+
+    ol#media li:before {
+      content: '[M' counter(media-counter) '] ';
+      counter-increment: media-counter;
+    }
+
+    hr {
+      border: none;
+      border-top: 1px solid #ccc;
+      margin: 2em 0;
+    }
+
+    img.center {
+      display: block;
+      margin-left: auto;
+      margin-right: auto;
+    }
+
+    table {
+      table-layout: fixed;
+      border-collapse: collapse;
+      margin: 0 auto;
+      border: 2px solid #000;
+    }
+
+    th,
+    td {
+      padding: 0.25em 0.5em;
+      text-align: center;
+      border: 1px solid #000;
+    }
+  </style>
+  <title>Experiments With Giant FFT</title>
+</head>
+<body>
+  <main style="max-width: 900px;">
+    <h1>Experiments With Giant FFTs</h1>
+    <p>
+      The paper <cite>Zero-Phase Sound via Giant FFT</cite> <span class="c" data-ref="valimaki2025"></span> by Välimäki,
+      Salmi, Bilbao, Schlecht, and Zicarelli, presented at the International Conference on Digital Audio Effects 2025
+      (DAFx25), proposes a conceptionally simple but sonically interesting idea: Applying the Fourier transform to a
+      long audio signal, erasing the spectrum's phase component, and finally taking the inverse Fourier transform. The
+      result is a zero-phase version of the original signal which exhibits smeared textural timbres while retaining
+      rhythmic patterns.
+    </p>
+    <p>
+      This present work gives a summary of the original method and extends it by proposing an algorithmic enveloping
+      method to treat undesirable transients at the beginning and end of the zero-phase signal. Further, linearization
+      of phase spectra, the use of signed amplitude spectra instead of nonnegative magnitude spectra and the selective
+      zero-phasing of non-percussive components are investigated, in part inspired by the paper authors' suggestions
+      for further work. The scripts used for this work are available from <a
+      href="https://github.com/wolframw/giant-fft-experiments">the project's repository</a>.
+    </p>
+
+    <h2 id="zero-phase">Zero-Phase Sound via Giant FFT</h2>
+    <p>
+      The process presented in <span class="c" data-ref="valimaki2025"></span> can be summarized as follows (see
+      Figure 11 and Section 3.4 in the paper):
+    <ol>
+      <li>Take an audio signal \(s(n)\) and optionally zero-pad it using a padding factor \(P\) to the total length
+      \(L\). If \(L\) is even, one sample can be removed or a zero sample added to make it odd.</li>
+      <li>Apply the FFT to obtain the spectrum \(S(k)\).</li>
+      <li>Compute the magnitude spectrum \(|S(k)|\).</li>
+      <li>Apply the inverse FFT to the magnitude spectrum to obtain the zero-phase signal \(s_0(n)\).</li>
+      <li>Multiply \(s_0(n)\) by an envelope to fade in and fade out the transients at the beginning and end of the
+      zero-phase signal.</li>
+      <li>Optionally, if the signal was zero-padded in step 1, apply a gain compensation to \(s_0(n)\) to counteract
+      the loss of energy toward the middle.</li>
+    </ol>
+    <p>
+      Additionally, the paper proposes an approach for synthesizing a stereo signal: In step 3, rather than taking the
+      magnitude spectrum, two separate zero-phase spectra are computed as \(|\Re(S(k))|\) and \(|\Im(S(k))| \), for the
+      left and right channels, respectively. The resulting signals are in quadrature, as shown in the paper.
+    </p>
+    <p>
+      Zero-phase audio signals are palindromic and can be generally described as retaining the original timbral
+      characteristics while losing their temporal structure. Interestingly, rhythmic patterns survive the zero-phase
+      conversion, although the individual rhythmic sounds, such as drumbeats, appear to become locally palindromic too,
+      with short but noticeable fade-ins and fade-outs. Sound examples can be found below and on <a
+      href="http://research.spa.aalto.fi/publications/papers/dafx25-zero-phase/">the paper's companion page</a>.
+    </p>
+    <div class="player">
+      <ts-track title="Acoustic Guitar (original) <span class='m' data-ref='acoustic-guitar'></span>">
+        <ts-source src="in/acoustic-guitar.wav"></ts-source>
+      </ts-track>
+      <ts-track title="Acoustic Guitar, zero phase, mono">
+        <ts-source src="out/zero-phase/acoustic-guitar-mono.mp3"></ts-source>
+      </ts-track>
+      <ts-track title="Acoustic Guitar, zero phase, quadrature stereo">
+        <ts-source src="out/zero-phase/acoustic-guitar-stereo.mp3"></ts-source>
+      </ts-track>
+    </div>
+    <div class="player">
+      <ts-track title="Female Speech (original) <span class='m' data-ref='female-speech'></span>">
+        <ts-source src="in/female-speech.wav"></ts-source>
+      </ts-track>
+      <ts-track title="Female Speech, zero phase, mono">
+        <ts-source src="out/zero-phase/female-speech-mono.mp3"></ts-source>
+      </ts-track>
+      <ts-track title="Female Speech, zero phase, quadrature stereo">
+        <ts-source src="out/zero-phase/female-speech-stereo.mp3"></ts-source>
+      </ts-track>
+    </div>
+    <div class="player">
+      <ts-track title="Synthesizers (original) <span class='m' data-ref='thanks'></span>">
+        <ts-source src="in/thanks.wav"></ts-source>
+      </ts-track>
+      <ts-track title="Synthesizers, zero phase, mono">
+        <ts-source src="out/zero-phase/thanks-mono.mp3"></ts-source>
+      </ts-track>
+      <ts-track title="Synthesizers, zero phase, quadrature stereo">
+        <ts-source src="out/zero-phase/thanks-stereo.mp3"></ts-source>
+      </ts-track>
+    </div>
+    <div class="player">
+      <ts-track title="Lounge Jazz Ensemble (original) <span class='m' data-ref='daiquiri-please'></span>">
+        <ts-source src="in/daiquiri-please.wav"></ts-source>
+      </ts-track>
+      <ts-track title="Lounge Jazz Ensemble, zero phase, mono">
+        <ts-source src="out/zero-phase/daiquiri-please-mono.mp3"></ts-source>
+      </ts-track>
+      <ts-track title="Lounge Jazz Ensemble, zero phase, quadrature stereo">
+        <ts-source src="out/zero-phase/daiquiri-please-stereo.mp3"></ts-source>
+      </ts-track>
+    </div>
+
+    <h3 id="auto-env">Algorithmic Enveloping</h3>
+    <p>
+      Step 5 is critical to obtaining an adequately listenable zero-phase signal. By removing phase information, all
+      sinusoids constituting the signal become cosines, leading to energy concentrating at \(n=0\), where all cosines
+      are nonzero. In general, there is substantial energy near small \(n\), where, for most natural and musical sounds,
+      low-frequency components interfere constructively before eventually spreading out. If these transients are left
+      untreated, they can cause undesirable clipping toward both ends of the zero-phase signal. If instead the untreated
+      signal's amplitude is normalized to \(\pm 1\), the non-transient parts of the signal tend to be overly attenuated.
+    </p>
+    <p>
+      In the paper, the authors propose using a quarter-sine envelope, which can be defined as
+      \begin{equation}
+        \label{eq:envelope}
+        w(n) = \begin{cases}
+          \sin\l(\dfrac{\pi n}{2F}\r) & 0 \le n \le F, \\
+          1 & F \lt n \le L+F, \\
+          \sin\l(\dfrac{\pi(n-L)}{2F}\r) & L+F \lt n \le L+2F, \\
+          0 & \text{otherwise},
+        \end{cases}
+      \end{equation}
+      with a fade-in and fade-out length of \(F \le L/2\) samples. The authors note that a suitable choice for \(F\)
+      depends on the signal's spectrum, although they don't give heuristics or algorithms for selecting \(F\). Manually
+      determining good values that neither overestimate nor underestimate transient levels relies on trial and error.
+    </p>
+    <p>
+      Assuming that the envelope should be applied symmetrically and span the entirety of \(s_0(n)\), one way of
+      obtaining suitable \(F\) is by finding an approximate target amplitude that isn't exceeded by the majority of of
+      the signal and determining how long the signal takes to decay to that level. This process was implemented by first
+      swapping steps 5 and 6 to compensate early for the energy loss toward the middle of \(s_0(n)\). Following that,
+      the
+      <i>target median absolute amplitude</i>
+      \begin{equation*}
+        \widetilde{s_0}  = \median (|s_0(0)|, |s_0(1)|, \ldots, |s_0(L-1)|)
+      \end{equation*}
+      is determined as a robust estimate for a suitable target level. Next, \(s_0(n)\) is processed in frames of \(G\)
+      samples using a hop size of \(H\) samples. Each frame's median absolute amplitude is computed and compared it to
+      \(\widetilde{s_0}\). The index of the sample preceding the first frame whose median absolute amplitude is less
+      than or equal to \(\widetilde{s_0}\) is then taken as fade length \(F\). A frame size of \(G=500\) samples and hop
+      size of \(H=250\) samples were empirically found to be suitable for a wide range of input signals.
+    </p>
+    <div class="player">
+      <ts-track title="Acoustic Guitar (original) <span class='m' data-ref='acoustic-guitar'></span>">
+        <ts-source src="in/acoustic-guitar.wav"></ts-source>
+      </ts-track>
+      <ts-track title="Acoustic Guitar, zero phase, no envelope, not normalized">
+        <ts-source src="out/zero-phase-envelope/acoustic-guitar-noenv-nonorm.mp3"></ts-source>
+      </ts-track>
+      <ts-track title="Acoustic Guitar, zero phase, no envelope, normalized">
+        <ts-source src="out/zero-phase-envelope/acoustic-guitar-noenv-norm.mp3"></ts-source>
+      </ts-track>
+      <ts-track title="Acoustic Guitar, zero phase, auto envelope, normalized">
+        <ts-source src="out/zero-phase/acoustic-guitar-mono.mp3"></ts-source>
+      </ts-track>
+    </div>
+    <div class="player">
+      <ts-track title="Male Speech (original) <span class='m' data-ref='male-speech'></span>">
+        <ts-source src="in/male-speech.wav"></ts-source>
+      </ts-track>
+      <ts-track title="Male Speech, zero phase, no envelope, not normalized">
+        <ts-source src="out/zero-phase-envelope/male-speech-noenv-nonorm.mp3"></ts-source>
+      </ts-track>
+      <ts-track title="Male Speech, zero phase, no envelope, normalized">
+        <ts-source src="out/zero-phase-envelope/male-speech-noenv-norm.mp3"></ts-source>
+      </ts-track>
+      <ts-track title="Male Speech, zero phase, algorithmic envelope, normalized">
+        <ts-source src="out/zero-phase-envelope/male-speech-mono.mp3"></ts-source>
+      </ts-track>
+    </div>
+
+    <h2 id="linear-phase">Linear-Phase and Piecewise Linear-Phase Sound</h2>
+    <p>
+      An alternative to the synthesis of a zero-phase signal (presumably inspired by zero-phase filters) is the
+      synthesis of a linear-phase signal, whose phase is a linear function of frequency, similar to a linear filter's
+      phase response. A signal's closest linear-phase spectrum \(\phi_\text{lin}(k)\) can be obtained by unwrapping its
+      phase and fitting a linear regression. The linear-phase spectrum \(S_\text{lin}(k)\) is then reconstructed as
+      \begin{equation}
+        \label{eq:linear}
+        S_\text{lin}(k) = |S(k)|e^{j\phi_\text{lin}(k)},
+      \end{equation}
+      where \(j\) is the imaginary unit and \(\phi_\text{lin}(k)\) is linear. Linearizing the entire phase spectrum,
+      however, merely produces a circularly shifted version of the zero-phase signal. New timbres can be produced by
+      processing the spectrum in segments and linearizing each segment individually, causing \(\phi_\text{lin}(k)\) to
+      become piecewise linear.
+    </p>
+    <p>
+      The perceptual outcome of this piecewise linearization depends on the segment length relative to the full spectrum
+      as well as the timbral characteristics of the input. As the segment length approaches the total number of bins,
+      the result increasingly approximates global linearization, yielding a circularly shifted zero-phase signal. The
+      large transients at both ends of the zero-phase signal move away from the signal's begining and end and are there
+      no longer easily suppressed by an envelope of the form of eq. \eqref{eq:envelope}. For segment lengths approaching
+      \(1\), the modified phase increasingly follows the original signal's phase. Between these extrema, shrinking
+      segment length smears transients in time and introduces audible ringing. The ringing is an expected side effect of
+      the segmentation which is equivalent to filtering the input signal with a rectangular window in the frequency
+      domain. For musical material, rhythmic features are perceptible for both very short and very long segment lengths
+      but become less defined for intermediate segment lengths.
+    </p>
+    <div class="player">
+      <ts-track title="Acoustic Guitar (original) <span class='m' data-ref='acoustic-guitar'></span>">
+        <ts-source src="in/acoustic-guitar.wav"></ts-source>
+      </ts-track>
+      <ts-track title="Acoustic Guitar, phase linearized over segments covering ~10% of bins each">
+        <ts-source src="out/pw-linear/acoustic-guitar-10.mp3"></ts-source>
+      </ts-track>
+      <ts-track title="Acoustic Guitar, phase linearized over segments covering ~1% of bins each">
+        <ts-source src="out/pw-linear/acoustic-guitar-100.mp3"></ts-source>
+      </ts-track>
+      <ts-track title="Acoustic Guitar, phase linearized over segments covering ~0.1% of bins each">
+        <ts-source src="out/pw-linear/acoustic-guitar-1000.mp3"></ts-source>
+      </ts-track>
+      <ts-track title="Acoustic Guitar, phase linearized over segments covering ~0.01% of bins each">
+        <ts-source src="out/pw-linear/acoustic-guitar-10000.mp3"></ts-source>
+      </ts-track>
+      <ts-track title="Acoustic Guitar, phase linearized over segments covering ~0.001% of bins each">
+        <ts-source src="out/pw-linear/acoustic-guitar-100000.mp3"></ts-source>
+      </ts-track>
+      <ts-track title="Acoustic Guitar, phase linearized over segments covering ~0.0005% of bins each">
+        <ts-source src="out/pw-linear/acoustic-guitar-200000.mp3"></ts-source>
+      </ts-track>
+      <ts-track title="Acoustic Guitar, phase linearized over segments covering ~0.00016% of bins each">
+        <ts-source src="out/pw-linear/acoustic-guitar-500000.mp3"></ts-source>
+      </ts-track>
+    </div>
+    <div class="player">
+      <ts-track title="Lounge Jazz Ensemble (original) <span class='m' data-ref='daiquiri-please'></span>">
+        <ts-source src="in/daiquiri-please.wav"></ts-source>
+      </ts-track>
+      <ts-track title="Lounge Jazz Ensemble, phase linearized over segments covering ~10% of bins each">
+        <ts-source src="out/pw-linear/daiquiri-please-10.mp3"></ts-source>
+      </ts-track>
+      <ts-track title="Lounge Jazz Ensemble, phase linearized over segments covering ~1% of bins each">
+        <ts-source src="out/pw-linear/daiquiri-please-100.mp3"></ts-source>
+      </ts-track>
+      <ts-track title="Lounge Jazz Ensemble, phase linearized over segments covering ~0.1% of bins each">
+        <ts-source src="out/pw-linear/daiquiri-please-1000.mp3"></ts-source>
+      </ts-track>
+      <ts-track title="Lounge Jazz Ensemble, phase linearized over segments covering ~0.01% of bins each">
+        <ts-source src="out/pw-linear/daiquiri-please-10000.mp3"></ts-source>
+      </ts-track>
+      <ts-track title="Lounge Jazz Ensemble, phase linearized over segments covering ~0.001% of bins each">
+        <ts-source src="out/pw-linear/daiquiri-please-100000.mp3"></ts-source>
+      </ts-track>
+      <ts-track title="Lounge Jazz Ensemble, phase linearized over segments covering ~0.0005% of bins each">
+        <ts-source src="out/pw-linear/daiquiri-please-200000.mp3"></ts-source>
+      </ts-track>
+      <ts-track title="Lounge Jazz Ensemble, phase linearized over segments covering ~0.00018% of bins each">
+        <ts-source src="out/pw-linear/daiquiri-please-500000.mp3"></ts-source>
+      </ts-track>
+    </div>
+    <div class="player">
+      <ts-track title="Guitar and Drum (original) <span class='m' data-ref='guitar-drum-loop'></span>">
+        <ts-source src="in/guitar-drum-loop.wav"></ts-source>
+      </ts-track>
+      <ts-track title="Guitar and Drum, phase linearized over segments covering ~10% of bins each">
+        <ts-source src="out/pw-linear/guitar-drum-loop-10.mp3"></ts-source>
+      </ts-track>
+      <ts-track title="Guitar and Drum, phase linearized over segments covering ~1% of bins each">
+        <ts-source src="out/pw-linear/guitar-drum-loop-100.mp3"></ts-source>
+      </ts-track>
+      <ts-track title="Guitar and Drum, phase linearized over segments covering ~0.1% of bins each">
+        <ts-source src="out/pw-linear/guitar-drum-loop-1000.mp3"></ts-source>
+      </ts-track>
+      <ts-track title="Guitar and Drum, phase linearized over segments covering ~0.01% of bins each">
+        <ts-source src="out/pw-linear/guitar-drum-loop-10000.mp3"></ts-source>
+      </ts-track>
+      <ts-track title="Guitar and Drum, phase linearized over segments covering ~0.001% of bins each">
+        <ts-source src="out/pw-linear/guitar-drum-loop-100000.mp3"></ts-source>
+      </ts-track>
+      <ts-track title="Guitar and Drum, phase linearized over segments covering ~0.00048% of bins each">
+        <ts-source src="out/pw-linear/guitar-drum-loop-200000.mp3"></ts-source>
+      </ts-track>
+      <ts-track title="Guitar and Drum, phase linearized over segments covering ~0.00018% of bins each">
+        <ts-source src="out/pw-linear/guitar-drum-loop-500000.mp3"></ts-source>
+      </ts-track>
+    </div>
+    <div class="player">
+      <ts-track title="Male Speech (original) <span class='m' data-ref='male-speech'></span>">
+        <ts-source src="in/male-speech.wav"></ts-source>
+      </ts-track>
+      <ts-track title="Male Speech, phase linearized over segments covering ~10% of bins each">
+        <ts-source src="out/pw-linear/male-speech-10.mp3"></ts-source>
+      </ts-track>
+      <ts-track title="Male Speech, phase linearized over segments covering ~1% of bins each">
+        <ts-source src="out/pw-linear/male-speech-100.mp3"></ts-source>
+      </ts-track>
+      <ts-track title="Male Speech, phase linearized over segments covering ~0.1% of bins each">
+        <ts-source src="out/pw-linear/male-speech-1000.mp3"></ts-source>
+      </ts-track>
+      <ts-track title="Male Speech, phase linearized over segments covering ~0.01% of bins each">
+        <ts-source src="out/pw-linear/male-speech-10000.mp3"></ts-source>
+      </ts-track>
+      <ts-track title="Male Speech, phase linearized over segments covering ~0.005% of bins each">
+        <ts-source src="out/pw-linear/male-speech-20000.mp3"></ts-source>
+      </ts-track>
+      <ts-track title="Male Speech, phase linearized over segments covering ~0.0018% of bins each">
+        <ts-source src="out/pw-linear/male-speech-50000.mp3"></ts-source>
+      </ts-track>
+    </div>
+
+    <h2 id="stn">STN Decomposition</h2>
+    <p>
+      One of the paper's suggestions for future work is to decompose the input signal into separate sine, transient, and
+      noise (STN) components and applying the zero-phase conversion to only the sinusiodal component rather than the
+      whole input signal. The STN decomposition was implemented based on methods presented in the article <cite>Enhanced
+      Fuzzy Decomposition of Sound Into Sines, Transients, and Noise</cite>
+      <span class="c" data-ref="fierro2023"></span> by Fierro and Välimäki.
+    </p>
+    <p>
+      Many musical sequences with prominent rhythmic characteristics have large rhythmic peaks in their zero-phase
+      conversions, causing the parts between the beats to become relatively quiet. For this reason, STN could be used to
+      remove or deemphasize such transients before or after generating the zero-phase signal. However, it was found that
+      in most cases using the parameters from the article, the STN decomposition does not completely separate certain
+      transient frequencies from the sinusoidal part, which causes some regularly-spaced peaks to reappear in the
+      zero-phase resynthesis.
+    </p>
+    <div class="player">
+      <ts-track title="Lounge Jazz Ensemble (original) <span class='m' data-ref='daiquiri-please'></span>">
+        <ts-source src="in/daiquiri-please.wav"></ts-source>
+      </ts-track>
+      <ts-track title="Lounge Jazz Ensemble, sinusoidal part">
+        <ts-source src="out/stn/daiquiri-please-sin.mp3"></ts-source>
+      </ts-track>
+      <ts-track title="Lounge Jazz Ensemble, transient part">
+        <ts-source src="out/stn/daiquiri-please-transient.mp3"></ts-source>
+      </ts-track>
+      <ts-track title="Lounge Jazz Ensemble, noise part">
+        <ts-source src="out/stn/daiquiri-please-noise.mp3"></ts-source>
+      </ts-track>
+      <ts-track title="Lounge Jazz Ensemble, zero phase">
+        <ts-source src="out/zero-phase/daiquiri-please-mono.mp3"></ts-source>
+      </ts-track>
+      <ts-track title="Lounge Jazz Ensemble, zero-phase sinusoidal part">
+        <ts-source src="out/stn/daiquiri-please-sin-mono.mp3"></ts-source>
+      </ts-track>
+      <ts-track title="Lounge Jazz Ensemble, zero-phase sinusoidal part, LPF at 250 Hz before zero-phase conversion">
+        <ts-source src="out/stn/daiquiri-please-sin-lpf250-mono.mp3"></ts-source>
+      </ts-track>
+    </div>
+    <div class="player">
+      <ts-track title="Guitar and Drum (original) <span class='m' data-ref='guitar-drum-loop'></span>">
+        <ts-source src="in/guitar-drum-loop.wav"></ts-source>
+      </ts-track>
+      <ts-track title="Guitar and Drum, sinusoidal part">
+        <ts-source src="out/stn/guitar-drum-loop-sin.mp3"></ts-source>
+      </ts-track>
+      <ts-track title="Guitar and Drum, transient part">
+        <ts-source src="out/stn/guitar-drum-loop-transient.mp3"></ts-source>
+      </ts-track>
+      <ts-track title="Guitar and Drum, noise part">
+        <ts-source src="out/stn/guitar-drum-loop-noise.mp3"></ts-source>
+      </ts-track>
+      <ts-track title="Guitar and Drum, zero phase">
+        <ts-source src="out/zero-phase/guitar-drum-loop-mono.mp3"></ts-source>
+      </ts-track>
+      <ts-track title="Guitar and Drum, zero-phase sinusoidal part">
+        <ts-source src="out/stn/guitar-drum-loop-sin-mono.mp3"></ts-source>
+      </ts-track>
+    </div>
+
+    <h2 id="signed">Signed Amplitude Spectrum Resynthesis</h2>
+    <p>
+      Another suggestion made by the authors of the zero-phase paper is to use a signed amplitude spectrum as opposed to
+      the nonnegative magnitude spectrum. Signed real frequency bins introduce \(\pi\)-phase components, corresponding
+      to negative cosines, to the spectrum. Step 3 of the zero-phase process is changed to compute the signed amplitude
+      spectrum
+      \begin{equation*}
+        S_\varsigma(k)=|S(k)| \varsigma(k),
+      \end{equation*}
+      where \(\varsigma(k) \in \{-1, +1\}\) is a sign mask. The <i>positive-biased sign function</i>
+      \begin{equation*}
+        \sgnp(x) = \begin{cases}
+          -1 & x \lt 0, \\
+          +1 & x \ge 0,
+        \end{cases}
+      \end{equation*}
+      is utilized to convert an arbitrary sequence to a sign mask. Since \(\varsigma(k) \neq 0\) is required for all
+      \(k\) to preserve the original magnitude spectrum, the usual definition of the sign function, for which
+      \(\sgn(0)=0\), is unsuitable.
+    </p>
+    <h3>Sign Mask From a Signal's Spectrum</h3>
+    <p>
+      Using another signal's spectrum, a sign mask is obtained by
+      \begin{equation*}
+        \varsigma(k) = \sgnp(\Re\{V(k)\}),
+      \end{equation*}
+      or
+      \begin{equation*}
+        \varsigma(k) = \sgnp(\Im\{V(k)\}),
+      \end{equation*}
+      where \(V(k)\) is the spectrum of a <i>sign donor signal</i> \(v(n)\) and the number of bins of \(S(k)\) and
+      \(V(k)\) must be equal. Taking the imaginary part's sign as opposed to the real part's sign makes no audible
+      difference in the resulting signal. 
+    </p>
+    <p>
+      In case \(V = S\), i.e. when the sign is taken from the original spectrum, the resulting signal is a mixture of a
+      time-smeared part, resembling the zero-phase sound, and a part resembling the input sound.
+    </p>
+    <div class="player">
+      <ts-track title="Acoustic Guitar (original) <span class='m' data-ref='acoustic-guitar'></span>">
+        <ts-source src="in/acoustic-guitar.wav"></ts-source>
+      </ts-track>
+      <ts-track title="Acoustic Guitar, amplitude sign taken from real spectrum">
+        <ts-source src="out/signed-amplitude/acoustic-guitar-real_spec.mp3"></ts-source>
+      </ts-track>
+    </div>
+    <div class="player">
+      <ts-track title="Lounge Jazz Ensemble (original) <span class='m' data-ref='daiquiri-please'></span>">
+        <ts-source src="in/daiquiri-please.wav"></ts-source>
+      </ts-track>
+      <ts-track title="Lounge Jazz Ensemble, amplitude sign taken from real spectrum">
+        <ts-source src="out/signed-amplitude/daiquiri-please-real_spec.mp3"></ts-source>
+      </ts-track>
+    </div>
+    <div class="player">
+      <ts-track title="Piano (original) <span class='m' data-ref='piano'></span>">
+        <ts-source src="in/piano.wav"></ts-source>
+      </ts-track>
+      <ts-track title="Piano, amplitude sign taken from real spectrum">
+        <ts-source src="out/signed-amplitude/piano-real_spec.mp3"></ts-source>
+      </ts-track>
+    </div>
+    <div class="player">
+      <ts-track title="Synthesizers (original) <span class='m' data-ref='thanks'></span>">
+        <ts-source src="in/thanks.wav"></ts-source>
+      </ts-track>
+      <ts-track title="Synthesizers, amplitude sign taken from real spectrum">
+        <ts-source src="out/signed-amplitude/thanks-real_spec.mp3"></ts-source>
+      </ts-track>
+    </div>
+    <p>
+      The figures below show time-domain signal overlays and correlations for the original "Acoustic Guitar" and "Jazz
+      Lounge Ensemble" sounds and their signed-amplitude resynthesized outputs. The amplitude spectra's signs were taken
+      from the real parts of their respective original spectra. Correlations were determined over 20-ms segments and
+      exhibit peaks that coincide with the transients in the input and zero-phase signals. To maintain readailibty of
+      the plots, they only show the signals' first eight seconds.
+    </p>
+    <img class="center" src="figures/acoustic-guitar-corr.png"
+      alt="Time-domain overlay and correlation between the original &quot;Acoustic Guitar&quot; sound and its signed-amplitude resynthesis with the sign taken from the real part of the input spectrum">
+    <img class="center" src="figures/lounge-jazz-corr.png"
+      alt="Time-domain overlay and correlation between the original &quot;Jazz Lounge Ensemble&quot; sound and its signed-amplitude resynthesis with the sign taken from the real part of the input spectrum">
+    <p>
+      The table below shows the correlation between the original signal of the sound demos and their respective
+      signed-amplitude resynthesis using the signs of their frequency spectrum's real parts. The correlation coefficients
+      were computed over the full duration of the signals.
+    </p>
+    <table>
+      <thead>
+        <tr>
+          <th></th>
+          <th>Acoustic Guitar</th>
+          <th>Lounge Jazz Ensemble</th>
+          <th>Piano</th>
+          <th>Synthesizers</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <th>Correlation</th>
+          <td>0.6820</td>
+          <td>0.5505</td>
+          <td>0.6655</td>
+          <td>0.6587</td>
+        </tr>
+      </tbody>
+    </table>
+    <p>
+      If the sign is taken from another signal's spectrum, a mixture of the input signal's spectral
+      characteristics and the donor signal's time-domain phenomena is produced.
+    </p>
+    <div class="player">
+      <ts-track title="Acoustic Guitar (original) <span class='m' data-ref='acoustic-guitar'></span>">
+        <ts-source src="in/acoustic-guitar.wav"></ts-source>
+      </ts-track>
+      <ts-track title="Acoustic Guitar, zero phase">
+        <ts-source src="out/zero-phase/acoustic-guitar-mono.mp3"></ts-source>
+      </ts-track>
+      <ts-track title="Piano (original) <span class='m' data-ref='piano'></span>">
+        <ts-source src="in/piano.wav"></ts-source>
+      </ts-track>
+      <ts-track title="Acoustic Guitar, amplitude sign taken from Piano's real spectrum">
+        <ts-source src="out/signed-amplitude/acoustic-guitar-donor_real_spec_piano.mp3"></ts-source>
+      </ts-track>
+      <ts-track title="Synthesizers (original) <span class='m' data-ref='thanks'></span>">
+        <ts-source src="in/thanks.wav"></ts-source>
+      </ts-track>
+      <ts-track title="Acoustic Guitar, amplitude sign taken from Synthesizers' real spectrum">
+        <ts-source src="out/signed-amplitude/acoustic-guitar-donor_real_spec_thanks.mp3"></ts-source>
+      </ts-track>
+      <ts-track title="Female Speech (original) <span class='m' data-ref='female-speech'></span>">
+        <ts-source src="in/female-speech.wav"></ts-source>
+      </ts-track>
+      <ts-track title="Acoustic Guitar, amplitude sign taken from Female Speech's real spectrum">
+        <ts-source src="out/signed-amplitude/acoustic-guitar-donor_real_spec_female-speech.mp3"></ts-source>
+      </ts-track>
+      <ts-track title="Male Speech (original) <span class='m' data-ref='male-speech'></span>">
+        <ts-source src="in/male-speech.wav"></ts-source>
+      </ts-track>
+      <ts-track title="Acoustic Guitar, amplitude sign taken from Male Speech's real spectrum">
+        <ts-source src="out/signed-amplitude/acoustic-guitar-donor_real_spec_male-speech.mp3"></ts-source>
+      </ts-track>
+    </div>
+    <div class="player">
+      <ts-track title="Female Speech (original) <span class='m' data-ref='female-speech'></span>">
+        <ts-source src="in/female-speech.wav"></ts-source>
+      </ts-track>
+      <ts-track title="Female Speech, zero phase">
+        <ts-source src="out/zero-phase/female-speech-mono.mp3"></ts-source>
+      </ts-track>
+      <ts-track title="Piano (original) <span class='m' data-ref='piano'></span>">
+        <ts-source src="in/piano.wav"></ts-source>
+      </ts-track>
+      <ts-track title="Female Speech, amplitude sign taken from Piano's real spectrum">
+        <ts-source src="out/signed-amplitude/female-speech-donor_real_spec_piano.mp3"></ts-source>
+      </ts-track>
+      <ts-track title="Synthesizers (original) <span class='m' data-ref='thanks'></span>">
+        <ts-source src="in/thanks.wav"></ts-source>
+      </ts-track>
+      <ts-track title="Female Speech, amplitude sign taken from Synthesizers' real spectrum">
+        <ts-source src="out/signed-amplitude/female-speech-donor_real_spec_thanks.mp3"></ts-source>
+      </ts-track>
+      <ts-track title="Acoustic Guitar (original) <span class='m' data-ref='acoustic-guitar'></span>">
+        <ts-source src="in/acoustic-guitar.wav"></ts-source>
+      </ts-track>
+      <ts-track title="Female Speech, amplitude sign taken from Acoustic Guitar's real spectrum">
+        <ts-source src="out/signed-amplitude/female-speech-donor_real_spec_acoustic-guitar.mp3"></ts-source>
+      </ts-track>
+      <ts-track title="Male Speech (original) <span class='m' data-ref='male-speech'></span>">
+        <ts-source src="in/male-speech.wav"></ts-source>
+      </ts-track>
+      <ts-track title="Female Speech, amplitude sign taken from Male Speech's real spectrum">
+        <ts-source src="out/signed-amplitude/female-speech-donor_real_spec_male-speech.mp3"></ts-source>
+      </ts-track>
+    </div>
+    <div class="player">
+      <ts-track title="Synthesizers (original) <span class='m' data-ref='thanks'></span>">
+        <ts-source src="in/thanks.wav"></ts-source>
+      </ts-track>
+      <ts-track title="Synthesizers, zero phase">
+        <ts-source src="out/zero-phase/thanks-mono.mp3"></ts-source>
+      </ts-track>
+      <ts-track title="Piano (original) <span class='m' data-ref='piano'></span>">
+        <ts-source src="in/piano.wav"></ts-source>
+      </ts-track>
+      <ts-track title="Synthesizers, amplitude sign taken from Piano's real spectrum">
+        <ts-source src="out/signed-amplitude/thanks-donor_real_spec_piano.mp3"></ts-source>
+      </ts-track>
+      <ts-track title="Acoustic Guitar (original) <span class='m' data-ref='acoustic-guitar'></span>">
+        <ts-source src="in/acoustic-guitar.wav"></ts-source>
+      </ts-track>
+      <ts-track title="Synthesizers, amplitude sign taken from Acoustic Guitar' real spectrum">
+        <ts-source src="out/signed-amplitude/thanks-donor_real_spec_acoustic-guitar.mp3"></ts-source>
+      </ts-track>
+      <ts-track title="Female Speech (original) <span class='m' data-ref='female-speech'></span>">
+        <ts-source src="in/female-speech.wav"></ts-source>
+      </ts-track>
+      <ts-track title="Synthesizers, amplitude sign taken from Female Speech's real spectrum">
+        <ts-source src="out/signed-amplitude/thanks-donor_real_spec_female-speech.mp3"></ts-source>
+      </ts-track>
+      <ts-track title="Male Speech (original) <span class='m' data-ref='male-speech'></span>">
+        <ts-source src="in/male-speech.wav"></ts-source>
+      </ts-track>
+      <ts-track title="Synthesizers, amplitude sign taken from Male Speech's real spectrum">
+        <ts-source src="out/signed-amplitude/thanks-donor_real_spec_male-speech.mp3"></ts-source>
+      </ts-track>
+    </div>
+    <p>
+      For the signed-amplitude resynthesis with the sign of another signal's real spectrum, a simple time-domain
+      correlation was found to give a good estimate for the perceptual similarity between the donor signal and the
+      resynthesized output. The figures below show time-domain signal overlays and correlations for the "Female Speech"
+      input sound and its resynthesis using the sign of the "Synthesizers" signal's real spectrum as well as the inverse
+      case. Again, the signals appear to have significant correlation at the transients, although the trend is not as
+      clear as in the case where the sign of the input signal's frequency spectrum was used. As before, the correlation
+      was computed over 20-ms segments and the plots were shortened to only show the first eight seconds.
+    </p>
+    <img src="figures/thanks-female-speech-corr.png"
+      alt="Time-domain overlay and correlation between the original &quot;Acoustic Guitar&quot; sound and its signed-amplitude resynthesis with the sign taken from the real part of the input spectrum">
+    <img src="figures/female-speech-thanks-corr.png"
+      alt="Time-domain overlay and correlation between the original &quot;Jazz Lounge Ensemble&quot; sound and its signed-amplitude resynthesis with the sign taken from the real part of the input spectrum">
+    <p>
+      The table below shows the correlation between several resynthesized sounds and their respective sign donor
+      signals. Zero-padding was applied to make the shorter signal fit the length of the other. The correlation was
+      computed only over the non-padded parts.
+    </p>
+    <table>
+      <thead>
+        <tr>
+          <th rowspan="2" colspan="2"></th>
+          <th colspan="3">Input Signals</th>
+        </tr>
+        <tr>
+          <th>Acoustic Guitar</th>
+          <th>Female Speech</th>
+          <th>Synthesizers</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <th rowspan="5">
+            Donor Signals
+          </th>
+          <th>Acoustic Guitar</th>
+          <td>0.6820</td>
+          <td>0.4717</td>
+          <td>0.3608</td>
+        </tr>
+        <tr>
+          <th>Piano</th>
+          <td>0.2222</td>
+          <td>0.1809</td>
+          <td>0.1178</td>
+        </tr>
+        <tr>
+          <th>Synthesizers</th>
+          <td>0.3608</td>
+          <td>0.3617</td>
+          <td>0.6587</td>
+        </tr>
+        <tr>
+          <th>Female Speech</th>
+          <td>0.4717</td>
+          <td>0.7339</td>
+          <td>0.4299</td>
+        </tr>
+        <tr>
+          <th>Male Speech</th>
+          <td>0.5065</td>
+          <td>0.5601</td>
+          <td>0.4375</td>
+        </tr>
+      </tbody>
+    </table>
+    <h3>Sign Mask Based on a Signal</h3>
+    <p>
+      An arbitrary signal \(v(n)\) is converted to a sign mask by
+      \begin{equation*}
+        \varsigma(k) = \sgnp(v(k)),
+      \end{equation*}
+      where the number of samples of \(v(k)\) must be equal to the number bins of \(S(k)\). Since the sign mask is
+      binary, one of the most straightforward ways of modulating the amplitude's sign is by multiplying the magnitude
+      spectrum by a fixed-frequency rectangular \(\pm 1\) pattern. Doing so causes repeated "pops" in the resynthesized output.
+    </p>
+    <div class="player">
+      <ts-track title="Acoustic Guitar (original) <span class='m' data-ref='acoustic-guitar'></span>">
+        <ts-source src="in/acoustic-guitar.wav"></ts-source>
+      </ts-track>
+      <ts-track title="Acoustic Guitar, zero phase">
+        <ts-source src="out/zero-phase/acoustic-guitar-mono.mp3"></ts-source>
+      </ts-track>
+      <ts-track title="Acoustic Guitar, 10-Hz square sign mask">
+        <ts-source src="out/signed-amplitude/acoustic-guitar-chirp_10.0-10.0.mp3"></ts-source>
+      </ts-track>
+      <ts-track title="Acoustic Guitar, 100-Hz square sign mask">
+        <ts-source src="out/signed-amplitude/acoustic-guitar-chirp_100.0-100.0.mp3"></ts-source>
+      </ts-track>
+    </div>
+    <div class="player">
+      <ts-track title="Female Speech (original) <span class='m' data-ref='female-speech'></span>">
+        <ts-source src="in/female-speech.wav"></ts-source>
+      </ts-track>
+      <ts-track title="Female Speech, zero phase">
+        <ts-source src="out/zero-phase/female-speech-mono.mp3"></ts-source>
+      </ts-track>
+      <ts-track title="Female Speech, 10-Hz square sign mask">
+        <ts-source src="out/signed-amplitude/female-speech-chirp_10.0-10.0.mp3"></ts-source>
+      </ts-track>
+      <ts-track title="Female Speech, 100-Hz square sign mask">
+        <ts-source src="out/signed-amplitude/female-speech-chirp_100.0-100.0.mp3"></ts-source>
+      </ts-track>
+    </div>
+    <p>
+      This phenomenon is best understood by interpreting the multiplication of the magnitude spectrum by the sign mask
+      as a circular convolution in time domain. The convolution pair consists of the zero-phase signal and the inverse
+      discrete Fourier transform (IDFT) of the sign mask, which is a finite all-pass impulse response.
+    </p>
+    <p>
+      A \(P\)-periodic rectangular sign mask can be written as
+      \begin{equation*}
+        \varsigma(k) = \sgnp\l(\!(-k \mod P) - \frac{P}{2}\r).
+      \end{equation*}
+    </p>
+    <p>
+      The time-domain impulse response \(h_\varsigma(n)\) corresponding to the spectral sign mask \(\varsigma(k)\) is
+      found by applying the IDFT,
+      \begin{equation}
+        \label{eq:cidft}
+        h_\varsigma(n) = \frac{1}{N} \sum_{k=0}^{N-1} \varsigma(k) e^{j2\pi nk/N},
+      \end{equation}
+      where \(N\) is the number of frequency bins. To ensure a real-valued impulse response, the spectrum is constructed
+      with Hermitian symmetry such that \(\varsigma(k) = \varsigma^*(-k)\). This symmetry is enforced by defining only
+      the positive half of the spectrum and mirroring it to obtain the negative half. The bin corresponding to DC
+      (\(k=0\)), being its own mirror, is excluded from this construction and handled separately.
+    </p>
+    <p>
+      If \(N\) is odd, the positive-frequency half of the spectrum consists of \(M=(N-1)/2=RP+C\) bins, where
+      \(R=\lfloor M/P \rfloor\) is the number of complete periods of the rectangle-shaped sign mask within the
+      half-spectrum, and \(C=M \mod P\) is the length of a possible incomplete period in case \(P\nmid M\). For
+      simplicity, it is assumed that \(N\) is odd and \(P\) is even. Nonetheless, the following derivation extends
+      naturally to other divisibility conditions.
+    </p>
+    <p>
+      Substituting the relationships described above and using the cosine identity \(e^{j x} + e^{-j x} = 2\cos(x)\),
+      the IDFT formulated in eq.&nbsp;\eqref{eq:cidft} becomes
+      \begin{equation}
+        \label{eq:ridft}
+        h_\varsigma(n) = \frac{1}{N} \l(\varsigma(0) + 2 \sum_{k=1}^{M-1} \varsigma(k) \cos\l(\frac{2\pi nk}{N}\r)\!\r).
+      \end{equation}
+    </p>
+    <p>
+      The sum over \(\varsigma(k)\) is then decomposed into a repetitive part \(S(n)\) and a residual part \(T(n)\), giving
+      \begin{equation}
+        \label{eq:decomp1}
+        \sum_{k=0}^{M-1} \varsigma(k) \cos\l(\frac{2\pi nk}{N}\r) = S(n) + T(n),
+      \end{equation}
+      where \(S(n)\) accounts for \(R\) full \(P\)-periodic repetitions of the square pattern and \(T(n)\) accounts for the
+      incomplete trailing period when \(P \nmid N\):
+
+      \begin{align}
+        \label{eq:decomp2}
+        \begin{split}
+          S(n) &:= \sum_{r=0}^{R-1} \Bigg(
+            \underbrace{ \sum_{p=0}^{P/2-1} \cos\l(\frac{2\pi n(p+rP)}{N}\r) }_{\text{positive half-wave}} 
+            \underbrace{ -\!\!\!\sum_{p=P/2}^{P-1} \cos\l(\frac{2\pi n(p+rP)}{N}\r)\! }_{\text{negative half-wave}}
+            \Bigg). \\
+
+          T(n) &:= \begin{cases}
+            \underbrace{ \sum_{d=0}^{C-1} \cos\l(\frac{2\pi n(d+RP)}{N}\r) }_{\text{incomplete positive half-wave}}   & 0 \lt C \le P/2, \\[8pt]
+            \underbrace{ \sum_{d=0}^{P/2-1} \cos\l(\frac{2\pi n(d+RP)}{N}\r) }_{\text{complete postitive half-wave}} \underbrace{-\!\!\!\!\sum_{d=P/2}^{C-1} \cos\l(\frac{2\pi n(d+RP)}{N}\r) }_{\text{incomplete negative half-wave}} & P/2 \lt C \lt P.
+          \end{cases}
+        \end{split}
+      \end{align}
+    </p>
+    <p>
+      Rewriting a cosine summation as a complex-exponential geometric series reveals a closed-form solution that will
+      become useful in studying the impulse response's structure. Given the summation limit \(K \ge 1\) and phase
+      components \(\alpha\) and \(\beta\), such a summation can be rewritten as
+      \begin{align}
+        \label{eq:gsexp}
+        \begin{split}
+          \sum_{k=0}^{K-1} \cos(\alpha + k\beta) &= \Re\l\{e^{j\alpha} \sum_{k=0}^{K-1}\l(e^{j\beta}\r)^{\!k} \r\} \\
+                                                &= \Re\l\{e^{j\alpha} \frac{1-e^{j\beta K}}{1-e^{j\beta}} \r\} \\
+                                                &= \Re\l\{e^{j\alpha} \frac{e^{jK\beta/2}(e^{-jK\beta/2} - e^{jK\beta/2})}{e^{j\beta/2}(e^{-j\beta/2} - e^{j\beta/2})} \r\} \\
+                                                &= \Re\l\{e^{j\alpha} e^{j(K-1)\beta/2} \frac{\sin(K\beta/2)}{\sin(\beta/2)} \r\} \\
+                                                &= \cos\l(\alpha + \frac{(K-1)\beta}{2}\r) \frac{\sin(K\beta/2)}{\sin(\beta/2)}.
+        \end{split}
+      \end{align}
+    </p>
+    <p>
+      By substituting eq. \eqref{eq:gsexp} into eq. \eqref{eq:decomp2},
+      reduced solutions for the cosine summations are obtained. Let
+      \begin{align}
+        \begin{split}
+          \phi &:= \frac{\pi n}{N}, \\
+          D_K(n) &:= \frac{\sin(K\pi n/N)}{\sin(\pi n/N)}, \\
+        \end{split}
+      \end{align}
+      then
+      \begin{align}
+        \begin{split}
+          S(n) &= D_{P/2}(n) D_R(Pn) \Big(\!\cos\!\big((PR-P+P/2-1)\phi\big) - \cos\!\big((PR+P/2-1)\phi\big)\!\Big), \\
+          T(n) &= \begin{cases}
+                D_{C}(n) \cos\!\big((2PR+C-1)\phi\big) & 0 \lt C \le P/2,\\
+                D_{P/2}(n) \cos\!\big((2PR+P/2-1)\phi\big) - D_{C-P/2}(n) \cos\!\big((2PR+C+P/2-1)\phi\big) & P/2 \lt C \lt P.
+              \end{cases}
+        \end{split}
+      \end{align}
+      Finally, rewriting eq. \eqref{eq:ridft} in terms of the reduced \(S(n)\) and \(T(n)\) yields the closed-form solution
+      \begin{equation}
+        h_\varsigma(n) = \frac{1}{N} \big(\varsigma(0) + 2(S(n)+T(n))\big).
+      \end{equation}
+    </p>
+    <p>
+      A key observation here is the reocurrence of \(D_K(n)\). This function, called the <i>Dirichlet kernel</i>, has
+      the structure of a periodic \(\sinc\) function and emerges from the summation of cosines, as demonstrated in eq
+      \eqref{eq:gsexp}. The main lobes of \(D_K(n)\) occur where \(n/N \in \mathbb{Z}\), with a main lobe width of
+      \(2N/K\) <span class="c" data-ref="lyons2011"></span>. The figures below show the individual components of
+      \(h_\varsigma(n)\) for \(N=599\) and \(P=16\), from which it follows that \(M=299\), \(R=18\), and \(C=11\).
+    </p>
+    <img class="center" src="figures/ir-components.png"
+      alt="Plots of the rectangular spectrum, the Dirichlet kernels, S(n) and T(n), and the impulse response for N=249, P=14, M">
+    <p>
+      As shown by the above depictions, \(h_\varsigma(n)\) retains a periodic \(\sinc\)-like shape. Convolution with a
+      \(\sinc\) function results in a replication of the input signal with some ringing causes by the side lobes. Each
+      "pop" in the previous sound examples corresponds to a delayed replication of the non-enveloped and unscaled
+      zero-phase signal whose energy is concentrated at its ends. These "pops" can be reduced by computing the
+      zero-phase signal as before and applying the sign mask to the resulting signal's magnitude spectrum.
+    </p>
+    <div class="player">
+      <ts-track title="Acoustic Guitar (original) <span class='m' data-ref='acoustic-guitar'></span>">
+        <ts-source src="in/acoustic-guitar.wav"></ts-source>
+      </ts-track>
+      <ts-track title="Acoustic Guitar, zero phase">
+        <ts-source src="out/zero-phase/acoustic-guitar-mono.mp3"></ts-source>
+      </ts-track>
+      <ts-track title="Acoustic Guitar, 10-Hz square sign mask">
+        <ts-source src="out/signed-amplitude/acoustic-guitar-chirp_10.0-10.0.mp3"></ts-source>
+      </ts-track>
+      <ts-track title="Acoustic Guitar, 10-Hz square sign mask, applied to the enveloped and scaled zero-phase signal">
+        <ts-source src="out/signed-amplitude/acoustic-guitar-chirp_10.0-10.0-post.mp3"></ts-source>
+      </ts-track>
+      <ts-track title="Acoustic Guitar, 100-Hz square sign mask">
+        <ts-source src="out/signed-amplitude/acoustic-guitar-chirp_100.0-100.0.mp3"></ts-source>
+      </ts-track>
+      <ts-track title="Acoustic Guitar, 100-Hz square sign mask, applied to the enveloped and scaled zero-phase signal">
+        <ts-source src="out/signed-amplitude/acoustic-guitar-chirp_100.0-100.0-post.mp3"></ts-source>
+      </ts-track>
+    </div>
+    <div class="player">
+      <ts-track title="Female Speech (original) <span class='m' data-ref='female-speech'></span>">
+        <ts-source src="in/female-speech.wav"></ts-source>
+      </ts-track>
+      <ts-track title="Female Speech, zero phase">
+        <ts-source src="out/zero-phase/female-speech-mono.mp3"></ts-source>
+      </ts-track>
+      <ts-track title="Female Speech, 10-Hz square sign mask">
+        <ts-source src="out/signed-amplitude/female-speech-chirp_10.0-10.0.mp3"></ts-source>
+      </ts-track>
+      <ts-track title="Female Speech, 10-Hz square sign mask, applied to the enveloped and scaled zero-phase signal">
+        <ts-source src="out/signed-amplitude/female-speech-chirp_10.0-10.0-post.mp3"></ts-source>
+      </ts-track>
+      <ts-track title="Female Speech, 100-Hz square sign mask">
+        <ts-source src="out/signed-amplitude/female-speech-chirp_100.0-100.0.mp3"></ts-source>
+      </ts-track>
+      <ts-track title="Female Speech, 100-Hz square sign mask, applied to the enveloped and scaled zero-phase signal">
+        <ts-source src="out/signed-amplitude/female-speech-chirp_100.0-100.0-post.mp3"></ts-source>
+      </ts-track>
+    </div>
+    <p>
+      One way of extending the square-shaped sign masks is by adding frequency modulation. The ways in which
+      Dirichlet-kernel structures arise in \(h_\varsigma(n)\) remains the same, however, with \(R\), \(P\), and \(D\)
+      varying over time, the number and locations of \(\sinc\) features also change, causing complex interferences. For
+      frequency sweeps, the resynthesized audio signals exhibit sweep-like aspects too.
+    </p>
+    <div class="player">
+      <ts-track title="Acoustic Guitar (original) <span class='m' data-ref='acoustic-guitar'></span>">
+        <ts-source src="in/acoustic-guitar.wav"></ts-source>
+      </ts-track>
+      <ts-track title="Acoustic Guitar, zero phase">
+        <ts-source src="out/zero-phase/acoustic-guitar-mono.mp3"></ts-source>
+      </ts-track>
+      <ts-track title="Acoustic Guitar, 100 Hz to 200 Hz chirp square sign mask">
+        <ts-source src="out/signed-amplitude/acoustic-guitar-chirp_100.0-200.0.mp3"></ts-source>
+      </ts-track>
+      <ts-track title="Acoustic Guitar, 100 Hz to 200 Hz chirp square sign mask, applied to the enveloped and scaled zero-phase signal">
+        <ts-source src="out/signed-amplitude/acoustic-guitar-chirp_100.0-200.0-post.mp3"></ts-source>
+      </ts-track>
+      <ts-track title="Acoustic Guitar, 100 Hz to 1000 Hz chirp square sign mask">
+        <ts-source src="out/signed-amplitude/acoustic-guitar-chirp_100.0-1000.0.mp3"></ts-source>
+      </ts-track>
+      <ts-track title="Acoustic Guitar, 100 Hz to 1000 Hz chirp square sign mask, applied to the enveloped and scaled zero-phase signal">
+        <ts-source src="out/signed-amplitude/acoustic-guitar-chirp_100.0-1000.0-post.mp3"></ts-source>
+      </ts-track>
+    </div>
+    <div class="player">
+      <ts-track title="Female Speech (original) <span class='m' data-ref='female-speech'></span>">
+        <ts-source src="in/female-speech.wav"></ts-source>
+      </ts-track>
+      <ts-track title="Female Speech, zero phase">
+        <ts-source src="out/zero-phase/female-speech-mono.mp3"></ts-source>
+      </ts-track>
+      <ts-track title="Female Speech, 100 Hz to 200 Hz chirp square sign mask">
+        <ts-source src="out/signed-amplitude/female-speech-chirp_100.0-200.0.mp3"></ts-source>
+      </ts-track>
+      <ts-track title="Female Speech, 100 Hz to 200 Hz chirp square sign mask, applied to the enveloped and scaled zero-phase signal">
+        <ts-source src="out/signed-amplitude/female-speech-chirp_100.0-200.0-post.mp3"></ts-source>
+      </ts-track>
+      <ts-track title="Female Speech, 100 Hz to 1000 Hz chirp square sign mask">
+        <ts-source src="out/signed-amplitude/female-speech-chirp_100.0-1000.0.mp3"></ts-source>
+      </ts-track>
+      <ts-track title="Female Speech, 100 Hz to 1000 Hz chirp square sign mask, applied to the enveloped and scaled zero-phase signal">
+        <ts-source src="out/signed-amplitude/female-speech-chirp_100.0-1000.0-post.mp3"></ts-source>
+      </ts-track>
+    </div>
+    <p>
+      Using a prerecorded audio signal as the donor signal \(v(k)\) was found not to transfer any noticeable
+      characteristics from the donor signal into the resynthesized output signal.
+    </p>
+    <div class="player">
+      <ts-track title="Acoustic Guitar (original) <span class='m' data-ref='acoustic-guitar'></span>">
+        <ts-source src="in/acoustic-guitar.wav"></ts-source>
+      </ts-track>
+      <ts-track title="Acoustic Guitar, zero phase">
+        <ts-source src="out/zero-phase/acoustic-guitar-mono.mp3"></ts-source>
+      </ts-track>
+      <ts-track title="Acoustic Guitar, amplitude sign taken from Acoustic Guitar">
+        <ts-source src="out/signed-amplitude/acoustic-guitar-donor_signal_acoustic-guitar.mp3"></ts-source>
+      </ts-track>
+      <ts-track title="Acoustic Guitar, amplitude sign taken from Acoustic Guitar, applied after scaling">
+        <ts-source src="out/signed-amplitude/acoustic-guitar-donor_signal_acoustic-guitar-post.mp3"></ts-source>
+      </ts-track>
+      <ts-track title="Synthesizers (original) <span class='m' data-ref='thanks'></span>">
+        <ts-source src="in/thanks.wav"></ts-source>
+      </ts-track>
+      <ts-track title="Acoustic Guitar, amplitude sign taken from Synthesizers">
+        <ts-source src="out/signed-amplitude/acoustic-guitar-donor_signal_thanks.mp3"></ts-source>
+      </ts-track>
+      <ts-track title="Acoustic Guitar, amplitude sign taken from Synthesizers, applied after scaling">
+        <ts-source src="out/signed-amplitude/acoustic-guitar-donor_signal_thanks-post.mp3"></ts-source>
+      </ts-track>
+    </div>
+    <div class="player">
+      <ts-track title="Synthesizers (original) <span class='m' data-ref='thanks'></span>">
+        <ts-source src="in/thanks.wav"></ts-source>
+      </ts-track>
+      <ts-track title="Synthesizers, zero phase">
+        <ts-source src="out/zero-phase/thanks-mono.mp3"></ts-source>
+      </ts-track>
+      <ts-track title="Synthesizers, amplitude sign taken from Synthesizers">
+        <ts-source src="out/signed-amplitude/thanks-donor_signal_thanks.mp3"></ts-source>
+      </ts-track>
+      <ts-track title="Synthesizers, amplitude sign taken from Synthesizers, applied after scaling">
+        <ts-source src="out/signed-amplitude/thanks-donor_signal_thanks-post.mp3"></ts-source>
+      </ts-track>
+      <ts-track title="Acoustic Guitar (original)">
+        <ts-source src="in/acoustic-guitar.wav"></ts-source>
+      </ts-track>
+      <ts-track title="Acoustic Guitar, amplitude sign taken from Acoustic Guitar">
+        <ts-source src="out/signed-amplitude/thanks-donor_signal_acoustic-guitar.mp3"></ts-source>
+      </ts-track>
+      <ts-track title="Acoustic Guitar, amplitude sign taken from Acoustic Guitar, applied after scaling">
+        <ts-source src="out/signed-amplitude/thanks-donor_signal_acoustic-guitar-post.mp3"></ts-source>
+      </ts-track>
+    </div>
+    <p>
+      Plotting the local correlation over 20-ms bins also shows that there is little similarity between the
+      resynthesized signal and the donor signal. Although the plots below depict just one example, the local
+      correlations for other input and donor signals are similar. The absolute global correlation between donor and
+      resynthesized signals is generally of the order of \(1\times 10^{-2}\) or less.
+    </p>
+    <img class="center" src="figures/synth-guitar-corr.png"
+      alt="Time-domain overlay and correlation between the original &quot;Synthesizers&quot; sound and its signed-amplitude resynthesis with the sign the &quot;Acoustic Guitar&quot; sound">
+    <hr>
+    <h2>References</h2>
+    <h3>Literary Sources</h3>
+    <ol id="bib">
+      <li id="valimaki2025">
+        V. Välimäki, R. Salmi, S. Bilbao, S. J. Schlecht, and D. Zicarelli, <cite><a
+        href="https://dafx.de/paper-archive/2025/DAFx25_paper_34.pdf" target="_blank">Zero-Phase Sound via Giant
+        FFT</a></cite> in
+        <cite><a href="https://dafx25.dii.univpm.it/wp-content/uploads/2025/09/DAFx25Proceedings.pdf"
+        target="_blank">Proceedings of the 28th International Conference on Digital Audio Effects</a></cite>, Ancona,
+        Italy, <time datetime="2025-09">Sep. 2025</time>, pp. 290&ndash;297.
+      </li>
+      <li id="fierro2023">
+        L. Fierro and V. Välimäki, <cite><a href="https://www.aes.org/tmpFiles/elib/20250929/22152.pdf"
+        target="_blank">Enhanced Fuzzy Decomposition of Sound Into Sines, Transients, and Noise</a></cite>, in
+        <cite>Journal of the Audio Engineering Society</cite>, vol. 71, no. 7/8, pp. 468&ndash;480, <time
+        datetime="2023-07">Jul. 2023</time>.
+      </li>
+      <li id="lyons2011">
+        R. G. Lyons, <cite>Understanding Digital Signal Processing</cite>, Pearson, 3rd edition, <time
+        datetime="2011">2011</time>.
+      </li>
+    </ol>
+
+    <h3>Media Credits</h3>
+    <ol id="media">
+      <li id="acoustic-guitar">
+        <i>Acoustic Guitar</i>: <cite><a href="https://freesound.org/s/751598/" target="_blank">Easy, unrest, worry,
+        clean guitar</a></cite> by AlmightyPsyche &ndash; License: Attribution NonCommercial 4.0
+      </li>
+      <li id="female-speech">
+        <i>Female Speech</i>: from <cite><a href="https://www.openslr.org/83/" target="_blank">Crowdsourced high-quality
+        UK and Ireland English Dialect speech data set</a></cite>, Copyright 2018, 2019 Google, Inc. &ndash; License:
+        Attribution-ShareAlike 4.0 International
+      </li>
+      <li id="thanks">
+        <i>Synthesizers</i>: a cover of <cite><a
+        href="https://pilotredsun.bandcamp.com/track/thanks-bandcamp-test-song">thanks (bandcamp test song)</a></cite>
+        by pilotredsun, arranged by the author
+      </li>
+      <li id="daiquiri-please">
+        <i>Lounge Jazz Ensemble</i>: <cite><a href="https://freesound.org/s/826685/" target="_blank">DAIQUIRI,
+        PLEASE</a></cite> by MadGravityStudio &ndash; License: Attribution 4.0
+      </li>
+      <li id="male-speech">
+        <i>Male Speech</i>: from <cite><a href="https://www.openslr.org/83/" target="_blank">Crowdsourced high-quality
+        UK and Ireland English Dialect speech data set</a></cite>, Copyright 2018, 2019 Google, Inc. &ndash; License:
+        Attribution-ShareAlike 4.0 International
+      </li>
+      <li id="guitar-drum-loop">
+        <i>Guitar and Drum</i>: <cite><a href="https://freesound.org/s/827097/" target="_blank">early 2000s indie tune -
+        guitar & drum loop</a></cite> by Johnmode &ndash; License: Attribution 4.0
+      </li>
+      <li id="piano">
+        <i>Piano</i>: <cite><a href="https://freesound.org/s/827471/" target="_blank">Piano loops 184 octave up long
+        loop 120 bpm</a></cite> by josefpres &ndash; License: Creative Commons 0
+      </li>
+    </ol>
+  </main>
+</body>
+<script>
+  $(".player").trackSwitch({
+    onlyradiosolo: true,
+    spacebar: true
+  });
+  const bibMap = {};
+  const mediaMap = {};
+  let bibCounter = 1;
+  let mediaCounter = 1;
+  document.querySelectorAll("span.c").forEach(el => {
+    const refId = el.dataset.ref;
+    if (!(refId in bibMap)) {
+      bibMap[refId] = bibCounter++;
+    }
+    const num = bibMap[refId];
+    el.innerHTML = `<a href="#${refId}">[${num}]</a>`;
+  });
+  document.querySelectorAll("span.m").forEach(el => {
+    const refId = el.dataset.ref;
+    if (!(refId in mediaMap)) {
+      mediaMap[refId] = mediaCounter++;
+    }
+    const num = mediaMap[refId];
+    el.innerHTML = `<a href="#${refId}">[M${num}]</a>`;
+  });
+</script>
+</html>
