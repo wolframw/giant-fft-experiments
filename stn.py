@@ -1,9 +1,11 @@
+import argparse
 from scipy.io import wavfile
 from scipy.signal import ShortTimeFFT
 from scipy.signal.windows import hann
 from scipy.ndimage import median_filter
 import numpy as np
 from pathlib import Path
+import util
 
 def mask(a, beta_l, beta_u):
     a = np.asarray(a)
@@ -17,11 +19,12 @@ def mask(a, beta_l, beta_u):
         )
     )
 
-input_file = "daiquiri-please.wav"
+p = argparse.ArgumentParser(prog="stn", description="Sine-Transient-Noise Decomposition", epilog="To tune the STN algorithm's parameters, you'll have to edit the script because there are so many.")
+p.add_argument("--in", required=True, dest="input_file", help="the input file")
+p.add_argument("--out-dir", default=".", required=False, help="the output directory (default: %(default)s)")
+args = p.parse_args()
 
-fs, in_signal = wavfile.read(f"in/{input_file}")
-peak = np.max([np.abs(np.iinfo(in_signal.dtype).min), np.abs(np.iinfo(in_signal.dtype).max)])
-in_signal = in_signal.astype(np.float32) / np.abs(peak)
+fs, in_signal = util.load_wav(args.input_file)
 
 # first step
 beta_u1    = 0.8
@@ -78,12 +81,9 @@ noise_spec2     = noise_mask2 * res_stft
 transient_signal = stft2.istft(transient_spec2)
 noise_signal     = stft2.istft(noise_spec2)
 
-transient_signal /= np.max(np.abs(transient_signal))
-noise_signal     /= np.max(np.abs(noise_signal))
-
 # output
-Path("out/stn").mkdir(parents=True, exist_ok=True)
-input_file_base = Path(input_file).stem
-wavfile.write(f"out/stn/{input_file_base}-sin.wav", fs, sin_signal)
-wavfile.write(f"out/stn/{input_file_base}-transient.wav", fs, transient_signal)
-wavfile.write(f"out/stn/{input_file_base}-noise.wav", fs, noise_signal)
+Path(args.out_dir).mkdir(parents=True, exist_ok=True)
+input_file_base = Path(args.input_file).stem
+util.write_wav(f"{args.out_dir}/{input_file_base}-sin.wav", fs, sin_signal)
+util.write_wav(f"{args.out_dir}/{input_file_base}-transient.wav", fs, transient_signal)
+util.write_wav(f"{args.out_dir}/{input_file_base}-noise.wav", fs, noise_signal)

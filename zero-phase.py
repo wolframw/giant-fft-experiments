@@ -1,74 +1,36 @@
+import argparse
 from scipy.io import wavfile
-from scipy.fft import rfft, irfft, fftshift
+from scipy.fft import rfft, irfft
 import numpy as np
 from pathlib import Path
+import util
 
-def sine_window(length, fade):
-    fade = max(0, fade)
-    w = np.ones(length)
+p = argparse.ArgumentParser(prog="stn", description="Zero-Phase Resynthesis via Giant FFT")
+p.add_argument("--in", required=True, dest="input_file", help="the input file")
+p.add_argument("--padding-factor", type=float, default=2, help="amount by which to zero pad, in multiples of the input length (default: %(default)s)")
+p.add_argument("--epsilon", type=float, default=0.05, required=False, help="epsilon parameter for gain compensation")
+p.add_argument("--out-dir", default=".", required=False, help="the output directory (default: %(default)s)")
+p.add_argument("--no-fade", action="store_true" , required=False, help="if specified, does not fade-in and fade-out transients at the beginning and end of the zero-phase signal")
+p.add_argument("--no-normalize", action="store_true" , required=False, help="if specified, does not normalize the zero-phase signal to -1/+1 before exporting")
+args = p.parse_args()
 
-    if fade > 0:
-        x = np.arange(fade)
-        w[:fade]  = np.sin(np.pi * x * 0.5 / fade)
-        w[-fade:] = np.cos(np.pi * x * 0.5 / fade)
+fs, signal = util.load_wav(args.input_file)
+signal = util.pad_odd(signal, args.padding_factor)
 
-    return w
+spec = rfft(signal, len(signal))
+zero_signal_stereo1 = irfft(np.abs(np.real(spec)), len(signal))
+zero_signal_stereo2 = irfft(np.abs(np.imag(spec)), len(signal))
+zero_signal_mono    = irfft(np.abs(spec), len(signal))
+zero_signal_mono   *= util.zero_phase_gain_comp(len(zero_signal_mono), args.epsilon)
 
-def calc_window_length(signal, target, chunk_length=500, hop=250):
-    offset = 0
-    while offset + chunk_length < len(signal):
-        chunk   = signal[offset:offset + chunk_length]
-        offset += hop
-        if np.median(np.abs(chunk)) < target:
-            return offset
-    return 1
+if not args.no_fade:
+    envelope = util.sine_envelope(len(zero_signal_mono), util.calc_transient_length(zero_signal_mono))
+    # envelope = util.sine_envelope(len(zero_signal_mono), int(44100*8))
+    zero_signal_stereo1 *= envelope
+    zero_signal_stereo2 *= envelope
+    zero_signal_mono    *= envelope
 
-def gain_comp(total_length, epsilon = 0.05):
-    ramp_length = np.int64(np.ceil(total_length / 2))
-    ramp = np.linspace(1, 0, ramp_length)
-    g = 1 / (np.sqrt(ramp) + epsilon)
-    if total_length % 2 == 0:
-        g = np.concatenate([g, np.flip(g)])
-    else:
-        g = np.concatenate([g, np.flip(g[:-1])])
-    return g
-
-def normalize(signal):
-    peak = np.max([np.abs(np.iinfo(signal.dtype).min), np.abs(np.iinfo(signal.dtype).max)])
-    return signal.astype(np.float32) / np.abs(peak)
-
-input_file = "clean-acoustic.wav"
-padding_factor = 2
-
-fs, signal = wavfile.read(f"in/{input_file}")
-
-pad_length = (padding_factor - 1) * len(signal)
-if (pad_length + len(signal)) % 2 == 0:
-    pad_length = pad_length - 1
-padded_signal = np.pad(signal, (0, pad_length))
-padded_length = len(padded_signal)
-
-spec = rfft(padded_signal)
-zero_signal_stereo1 = irfft(np.abs(np.real(spec)))
-zero_signal_stereo2 = irfft(np.abs(np.imag(spec)))
-zero_signal_mono    = irfft(np.abs(spec))
-
-comp_env = gain_comp(len(zero_signal_mono))
-zero_signal_mono    *= comp_env
-
-median_sample = np.median(np.abs(zero_signal_mono))
-window = sine_window(len(zero_signal_mono), calc_window_length(zero_signal_mono, median_sample))
-
-zero_signal_stereo1 *= window
-zero_signal_stereo1 /= np.max(np.abs(zero_signal_stereo1))
-
-zero_signal_stereo2 *= window
-zero_signal_stereo2 /= np.max(np.abs(zero_signal_stereo2))
-
-zero_signal_mono *= window
-zero_signal_mono /= np.max(np.abs(zero_signal_mono))
-
-Path("out/zero-phase").mkdir(parents=True, exist_ok=True)
-input_file_base = Path(input_file).stem
-wavfile.write(f"out/zero-phase/{input_file_base}-mono.wav"  , fs, zero_signal_mono)
-wavfile.write(f"out/zero-phase/{input_file_base}-stereo.wav", fs, np.column_stack([zero_signal_stereo1, zero_signal_stereo2]))
+Path(args.out_dir).mkdir(parents=True, exist_ok=True)
+input_file_base = Path(args.input_file).stem
+util.write_wav(f"{args.out_dir}/{input_file_base}-mono.wav", fs, zero_signal_mono, normalize=not args.no_normalize)
+util.write_wav(f"{args.out_dir}/{input_file_base}-stereo.wav", fs, np.column_stack((zero_signal_stereo1, zero_signal_stereo2)), normalize=not args.no_normalize)
