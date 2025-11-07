@@ -5,7 +5,7 @@ import numpy as np
 from pathlib import Path
 import util
 
-p = argparse.ArgumentParser(prog="stn", description="Zero-Phase Resynthesis via Giant FFT")
+p = argparse.ArgumentParser(prog="zero-phase", description="Zero-Phase Resynthesis via Giant FFT")
 p.add_argument("--in", required=True, dest="input_file", help="the input file")
 p.add_argument("--padding-factor", type=float, default=2, help="amount by which to zero pad, in multiples of the input length (default: %(default)s)")
 p.add_argument("--epsilon", type=float, default=0.05, required=False, help="epsilon parameter for gain compensation")
