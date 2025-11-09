@@ -211,7 +211,7 @@
       </ts-track>
     </div>
 
-    <h3 id="auto-env">Algorithmic Enveloping</h3>
+    <h3 id="auto-env">Enveloping Algorithm</h3>
     <p>
       Step 5 is critical to obtaining an adequately listenable zero-phase signal. By removing phase information, all
       sinusoids constituting the signal become cosines, leading to energy concentrating at \(n=0\), where all cosines
@@ -261,7 +261,7 @@
       <ts-track title="Acoustic Guitar, zero phase, no envelope, normalized">
         <ts-source src="out/zero-phase-envelope/acoustic-guitar-noenv-norm.mp3"></ts-source>
       </ts-track>
-      <ts-track title="Acoustic Guitar, zero phase, auto envelope, normalized">
+      <ts-track title="Acoustic Guitar, zero phase, algorithmically computed envelope, normalized">
         <ts-source src="out/zero-phase/acoustic-guitar-mono.mp3"></ts-source>
       </ts-track>
     </div>
@@ -275,7 +275,7 @@
       <ts-track title="Male Speech, zero phase, no envelope, normalized">
         <ts-source src="out/zero-phase-envelope/male-speech-noenv-norm.mp3"></ts-source>
       </ts-track>
-      <ts-track title="Male Speech, zero phase, algorithmic envelope, normalized">
+      <ts-track title="Male Speech, zero phase, algorithmically computed envelope, normalized">
         <ts-source src="out/zero-phase-envelope/male-speech-mono.mp3"></ts-source>
       </ts-track>
     </div>
@@ -890,7 +890,7 @@
     <img class="center" src="figures/ir-components.png"
       alt="Plots of the rectangular spectrum, the Dirichlet kernels, S(n) and T(n), and the impulse response for N=249, P=14, M">
     <p>
-      As shown by the above depictions, \(h_\varsigma(n)\) retains a periodic \(\sinc\)-like shape. Convolution with a
+      As depicted in the above figure, \(h_\varsigma(n)\) retains a periodic \(\sinc\)-like shape. Convolution with a
       \(\sinc\) function results in a replication of the input signal with some ringing causes by the side lobes. Each
       "pop" in the previous sound examples corresponds to a delayed replication of the non-enveloped and unscaled
       zero-phase signal whose energy is concentrated at its ends. These "pops" can be reduced by computing the
@@ -1128,3 +1128,4 @@
 </script>
 
 </html>
+
