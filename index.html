@@ -11,8 +11,6 @@
           median: "\\operatorname{median}",
           mod: "\\operatorname{\\:mod\\:}",
           sinc: "\\operatorname{sinc}",
-          dotdot: "\\mathinner{\\ldotp\\!\\ldotp}",
-          sq: "{\\small\\underline{\\phantom{L}}\\overline{\\phantom{L}}}",
           l: ['\\mathopen{}\\left#1', 1],
           r: ['\\right#1\\mathclose{}', 1]
         },
@@ -237,18 +235,17 @@
     </p>
     <p>
       Assuming that the envelope should be applied symmetrically and span the entirety of \(s_0(n)\), one way of
-      obtaining suitable \(F\) is by finding an approximate target amplitude that isn't exceeded by the majority of of
-      the signal and determining how long the signal takes to decay to that level. This process was implemented by first
-      swapping steps 5 and 6 to compensate early for the energy loss toward the middle of \(s_0(n)\). Following that,
-      the
-      <i>target median absolute amplitude</i>
+      obtaining suitable \(F\) is by finding an approximate target amplitude that is not exceeded by the majority of
+      the samples and determining how long the signal takes to decay to that level. This process was implemented by first
+      swapping steps 5 and 6 of the zero-phase process to compensate early for the energy loss toward the middle of \(s_0(n)\).
+      Following that, the <i>target median absolute amplitude</i>
       \begin{equation*}
         \widetilde{s_0}  = \median (|s_0(0)|, |s_0(1)|, \ldots, |s_0(L-1)|)
       \end{equation*}
       is determined as a robust estimate for a suitable target level. Next, \(s_0(n)\) is processed in frames of \(G\)
-      samples using a hop size of \(H\) samples. Each frame's median absolute amplitude is computed and compared it to
+      samples using a hop size of \(H\) samples. Each frame's median absolute amplitude is computed and compared to
       \(\widetilde{s_0}\). The index of the sample preceding the first frame whose median absolute amplitude is less
-      than or equal to \(\widetilde{s_0}\) is then taken as fade length \(F\). A frame size of \(G=500\) samples and hop
+      than or equal to \(\widetilde{s_0}\) is then taken as fade length \(F\). A frame size of \(G=500\) samples and a hop
       size of \(H=250\) samples were empirically found to be suitable for a wide range of input signals.
     </p>
     <div class="player">
@@ -1128,4 +1125,5 @@
 </script>
 
 </html>
+
 
